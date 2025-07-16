@@ -1,0 +1,38 @@
+image: node:18
+
+pipelines:
+  default:
+    - parallel:
+      - step:
+          name: 'Build and Test'
+          caches:
+            - node
+          script:
+            - echo "Installing dependencies..."
+            - npm install
+            - echo "Running tests..."
+            - npm test  # Ensure you have a test script in package.json
+      - step:
+          name: 'Lint'
+          caches:
+            - node
+          script:
+            - echo "Linting code..."
+            - npm install
+            - npm run lint  # Ensure you have a lint script
+      - step:
+          name: 'Security Scan'
+          caches:
+            - node
+          script:
+            - echo "Running security scan with npm audit..."
+            - npm install
+            - npm audit --audit-level=moderate
+
+    - step:
+        name: 'Deployment to Staging'
+        deployment: staging
+        script:
+          - echo "Not ready for deployment"
+          
+

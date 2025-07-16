@@ -1,0 +1,92 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Article {
+  id           BigInt       @id @default(autoincrement())
+  name         String
+  gender       Gender
+  description  String
+  price        Float
+  category     Category
+  state        State
+  color        String
+  brand        String
+  size         ArticleSize
+  babySize     BabySize?
+  childSize    ChildSize?
+  adultSize    AdultSize?
+  owner        String
+  boughtBy     String?
+  offers         Json?
+  creationDate DateTime   @default(now())
+  images       String
+  mainImage    String
+  perishable   Boolean
+  published    Boolean
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  UNISEX
+}
+
+enum State {
+  NEW
+  USED
+}
+
+enum Category {
+  Pants
+  Shirts
+  Pullovers
+  Jackets
+  TShirts
+  Blouses
+  Polo
+  CropTops
+  HatsCaps
+  Socks
+  Accessories
+}
+
+enum ArticleSize {
+  BABY
+  CHILD
+  ADULT
+}
+
+enum BabySize {
+  ThreeMonths
+  ThreeToSixMonths
+  SixToNineMonths
+  NineToTwelveMonths
+  TwelveToEighteenMonths
+  EighteenToTwentyFourMonths
+}
+
+enum ChildSize {
+  TwoToFourYears
+  FourToSixYears
+  SixToEightYears
+  EightToTenYears
+  TenToTwelveYears
+}
+
+enum AdultSize {
+  XS
+  S
+  M
+  L
+  XL
+  XXL
+  ThreeXL
+  FourXL
+  FiveXL
+}
