@@ -2,7 +2,7 @@ const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
-// Helper to generate a unique username
+// Helper to generate a unique 
 async function generateUniqueUsername(firstName, lastName) {
   let baseUsername = `${firstName.toLowerCase()}.${lastName.toLowerCase()}`.replace(/\s+/g, '');
   let username = baseUsername;
