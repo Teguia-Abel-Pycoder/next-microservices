@@ -7,11 +7,8 @@ const userRoutes = require('./routes/userRoutes');
 require('dotenv').config();
 require('./config/passport')(passport); // ✅ This registers the strategy
 app.use(cors());
-const prisma = require('./lib/prisma');
-process.on('SIGINT', async () => {
-  await prisma.$disconnect();
-  process.exit(0);
-});
+
+
 app.use(express.json()); 
 
 app.use('/users', userRoutes); 
