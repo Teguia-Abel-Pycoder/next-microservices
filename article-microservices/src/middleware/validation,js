@@ -1,0 +1,111 @@
+
+
+// middleware/validation.js
+const { body, param, query, validationResult } = require('express-validator');
+
+/**
+ * Handle validation results
+ */
+const handleValidationErrors = (req, res, next) => {
+  const errors = validationResult(req);
+  
+  if (!errors.isEmpty()) {
+    return res.status(400).json({
+      success: false,
+      message: 'Validation failed',
+      errors: errors.array().reduce((acc, error) => {
+        acc[error.param] = error.msg;
+        return acc;
+      }, {})
+    });
+  }
+  
+  next();
+};
+
+/**
+ * Validation rules for creating articles
+ */
+const validateCreateArticle = [
+  body('name')
+    .notEmpty()
+    .withMessage('Name is required')
+    .isLength({ max: 255 })
+    .withMessage('Name must be less than 255 characters'),
+  
+  body('price')
+    .isFloat({ min: 0 })
+    .withMessage('Price must be a positive number'),
+  
+  body('category')
+    .notEmpty()
+    .withMessage('Category is required'),
+  
+  body('state')
+    .isIn(['NEW', 'USED', 'GOOD', 'FAIR'])
+    .withMessage('Invalid state value'),
+  
+  body('gender')
+    .optional()
+    .isIn(['MALE', 'FEMALE', 'UNISEX'])
+    .withMessage('Invalid gender value'),
+  
+  body('size')
+    .isIn(['BABY', 'CHILD', 'ADULT'])
+    .withMessage('Invalid size value'),
+  
+  handleValidationErrors
+];
+
+/**
+ * Validation rules for creating offers
+ */
+const validateCreateOffer = [
+  body('articleId')
+    .notEmpty()
+    .withMessage('Article ID is required')
+    .isNumeric()
+    .withMessage('Article ID must be a number'),
+  
+  body('price')
+    .isFloat({ min: 0 })
+    .withMessage('Price must be a positive number'),
+  
+  handleValidationErrors
+];
+
+/**
+ * Validation rules for ID parameters
+ */
+const validateIdParam = [
+  param('id')
+    .isNumeric()
+    .withMessage('ID must be a number'),
+  
+  handleValidationErrors
+];
+
+/**
+ * Validation rules for pagination
+ */
+const validatePagination = [
+  query('page')
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage('Page must be a positive integer'),
+  
+  query('limit')
+    .optional()
+    .isInt({ min: 1, max: 100 })
+    .withMessage('Limit must be between 1 and 100'),
+  
+  handleValidationErrors
+];
+
+module.exports = {
+  handleValidationErrors,
+  validateCreateArticle,
+  validateCreateOffer,
+  validateIdParam,
+  validatePagination
+};

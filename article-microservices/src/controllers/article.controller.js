@@ -1,59 +1,73 @@
+// controllers/article.controller.js
 const prisma = require('../prismaClient');
-function serializeBigInt(obj) {
-  return JSON.parse(JSON.stringify(obj, (_, value) =>
-    typeof value === 'bigint' ? value.toString() : value
-  ));
-}
-
-
+const { ValidationError } = require('../utils/errors');
+const { serializeBigInt, validateArticleData } = require('../utils/helpers');
+const jwt = require('jsonwebtoken');
 
 /**
  * @swagger
- * /article-api:
+ * /api/articles:
  *   post:
  *     summary: Create a new article
  *     tags: [Articles]
  *     requestBody:
  *       required: true
  *       content:
- *         application/json:
+ *         multipart/form-data:
  *           schema:
  *             type: object
+ *             required:
+ *               - name
+ *               - price
+ *               - category
+ *               - state
+ *               - size
  *             properties:
  *               name:
  *                 type: string
+ *                 maxLength: 255
  *               gender:
  *                 type: string
+ *                 enum: [MALE, FEMALE, UNISEX]
  *               description:
  *                 type: string
  *               price:
  *                 type: number
+ *                 minimum: 0
  *               category:
  *                 type: string
  *               state:
  *                 type: string
+ *                 enum: [NEW, USED, GOOD, FAIR]
  *               color:
  *                 type: string
  *               brand:
  *                 type: string
  *               size:
  *                 type: string
+ *                 enum: [BABY, CHILD, ADULT]
  *               perishable:
  *                 type: boolean
  *               published:
  *                 type: boolean
- *               creationDate:
+ *               mainImage:
  *                 type: string
- *                 format: date-time
+ *                 format: binary
+ *               images:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                   format: binary
  *     responses:
  *       201:
  *         description: Article created successfully
+ *       400:
+ *         description: Invalid input data
+ *       401:
+ *         description: Unauthorized
  *       500:
  *         description: Server error
  */
-
-
-
 const createArticle = async (req, res) => {
   try {
     const {
@@ -62,357 +76,620 @@ const createArticle = async (req, res) => {
       creationDate, perishable, published
     } = req.body;
 
-    // 👇 Get owner from the forwarded header
+    // Validate required fields
+    const validation = validateArticleData(req.body);
+    if (!validation.isValid) {
+      return res.status(400).json({ 
+        message: 'Validation failed', 
+        errors: validation.errors 
+      });
+    }
+    
+    // Get owner from authenticated user
     const owner = req.headers['x-user-username'];
+    console.log('headers:', req.headers);
+    console.log('Owner from headers:', owner);
+    if (!owner) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
+
+    // Handle file uploads
     const mainImageFile = req.files?.mainImage?.[0];
     const imagesFiles = req.files?.images ?? [];
 
-    const mainImage = mainImageFile ? mainImageFile.filename : '';
-    const images = imagesFiles.length ? imagesFiles.map(f => f.filename).join(',') : '';
+    const mainImage = mainImageFile ? mainImageFile.filename : null;
+    const images = imagesFiles.length ? imagesFiles.map(f => f.filename).join(',') : null;
 
+    const articleData = {
+      name: name.trim(),
+      gender,
+      description: description?.trim() || '',
+      price: parseFloat(price),
+      category,
+      state,
+      color: color?.trim() || '',
+      brand: brand?.trim() || '',
+      size,
+      babySize: size === 'BABY' ? babySize : null,
+      childSize: size === 'CHILD' ? childSize : null,
+      adultSize: size === 'ADULT' ? adultSize : null,
+      owner,
+      creationDate: creationDate ? new Date(creationDate) : new Date(),
+      images,
+      mainImage,
+      perishable: perishable === 'true',
+      published: published === 'true',
+    };
 
     const article = await prisma.article.create({
-      data: {
-        name,
-        gender,
-        description,
-        price: parseFloat(price),
-        category,
-        state,
-        color,
-        brand,
-        size,
-        babySize,
-        childSize,
-        adultSize,
-        owner,
-        creationDate: new Date(creationDate),
-        images,
-        mainImage,
-        perishable: perishable === 'true',
-        published: published === 'true',
-        
-      },
+      data: articleData,
+      include: {
+        offers: true
+      }
     });
 
-    res.status(201).json(serializeBigInt(article));
+    res.status(201).json({
+      success: true,
+      message: 'Article created successfully',
+      data: serializeBigInt(article)
+    });
 
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Error creating article', error });
+    console.error('Error creating article:', error);
+    
+    if (error instanceof ValidationError) {
+      return res.status(400).json({ 
+        success: false,
+        message: error.message,
+        errors: error.details
+      });
+    }
+
+    res.status(500).json({ 
+      success: false,
+      message: 'Error creating article',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 };
 
-
-// OpenAPI/Swagger documentation for /article-api/{id} endpoint moved to comment to avoid JS errors.
-/*
-paths:
-  /article-api/{id}:
-    get:
-      summary: Get an article by its ID
-      description: Retrieves a single article by its unique identifier
-      tags: [Articles]
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: integer
-            format: int64
-          description: Numeric ID of the article to retrieve
-      responses:
-        '200':
-          description: Article found and returned successfully
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Article'
-        '400':
-          description: Invalid article ID provided
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: "Invalid article ID"
-        '404':
-          description: Article not found
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: "Article not found"
-        '500':
-          description: Internal server error
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: "Error retrieving article"
-                  error:
-                    type: string
-                    example: "Error details..."
-*/
-
+/**
+ * @swagger
+ * /api/articles/details/{id}:
+ *   get:
+ *     summary: Get an article by its ID
+ *     tags: [Articles]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Article ID
+ *     responses:
+ *       200:
+ *         description: Article found
+ *       400:
+ *         description: Invalid article ID
+ *       404:
+ *         description: Article not found
+ *       500:
+ *         description: Server error
+ */
 const getArticleById = async (req, res) => {
   try {
-    const articleId = parseInt(req.params.id);
-
-    if (isNaN(articleId)) {
-      return res.status(400).json({ message: 'Invalid article ID' });
+    const { id } = req.params;
+    
+    // Validate ID format
+    if (!id || isNaN(parseInt(id))) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Invalid article ID format' 
+      });
     }
 
+    const articleId = BigInt(id);
+
     const article = await prisma.article.findUnique({
-      where: { id: articleId }
+      where: { id: articleId },
+      include: {
+        offers: {
+          orderBy: {
+            createdDate: 'desc'
+          }
+        }
+      }
     });
 
     if (!article) {
-      return res.status(404).json({ message: 'Article not found' });
+      return res.status(404).json({ 
+        success: false,
+        message: 'Article not found' 
+      });
     }
 
-    // Convert BigInt fields to string if needed (e.g. id)
-    const safeArticle = JSON.parse(JSON.stringify(article, (_, value) =>
-      typeof value === 'bigint' ? value.toString() : value
-    ));
+    res.json({
+      success: true,
+      data: serializeBigInt(article)
+    });
 
-    res.json(safeArticle);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Error retrieving article', error });
+    console.error('Error retrieving article:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Error retrieving article',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 };
 
 const updateArticleById = async (req, res) => {
   try {
-    const articleId = parseInt(req.params.id);
-    if (isNaN(articleId)) {
-      return res.status(400).json({ message: 'Invalid article ID' });
+    const { id } = req.params;
+    const owner = req.headers['x-user-username'];
+
+    if (!owner) {
+      return res.status(401).json({ 
+        success: false,
+        message: 'Authentication required' 
+      });
     }
 
-    // Prepare images field: if a new file uploaded, update images; otherwise keep existing
+    if (!id || isNaN(parseInt(id))) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Invalid article ID format' 
+      });
+    }
+
+    const articleId = BigInt(id);
+
+    // Check if article exists and user is owner
+    const existingArticle = await prisma.article.findUnique({
+      where: { id: articleId }
+    });
+
+    if (!existingArticle) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'Article not found' 
+      });
+    }
+
+    if (existingArticle.owner !== owner) {
+      return res.status(403).json({ 
+        success: false,
+        message: 'You are not authorized to update this article' 
+      });
+    }
+
+    // Handle file uploads
     let images;
     if (req.files && req.files.length > 0) {
-    images = req.files.map(file => file.filename).join(',');
+      images = req.files.map(file => file.filename).join(',');
     }
 
-    // Build data object dynamically to update only provided fields
+    // Build update data
     const {
       name, gender, description, price, category, state,
       color, brand, size, babySize, childSize, adultSize,
-      owner, creationDate, perishable, published
+      perishable, published
     } = req.body;
 
-    const dataToUpdate = {
-      ...(name && { name }),
-      ...(gender && { gender }),
-      ...(description && { description }),
-      ...(price && { price: parseFloat(price) }),
-      ...(category && { category }),
-      ...(state && { state }),
-      ...(color && { color }),
-      ...(brand && { brand }),
-      ...(size && { size }),
-      ...(babySize && { babySize }),
-      ...(childSize && { childSize }),
-      ...(adultSize && { adultSize }),
-      ...(owner && { owner }),
-      ...(creationDate && { creationDate: new Date(creationDate) }),
-      ...(perishable !== undefined && { perishable: perishable === 'true' }),
-      ...(published !== undefined && { published: published === 'true' }),
-      ...(images && { images }),
-    };
-
-    // Check if at least one field to update
-    if (Object.keys(dataToUpdate).length === 0) {
-      return res.status(400).json({ message: 'No valid fields provided for update' });
+    const updateData = {};
+    
+    if (name) updateData.name = name.trim();
+    if (gender) updateData.gender = gender;
+    if (description !== undefined) updateData.description = description.trim();
+    if (price) updateData.price = parseFloat(price);
+    if (category) updateData.category = category;
+    if (state) updateData.state = state;
+    if (color !== undefined) updateData.color = color.trim();
+    if (brand !== undefined) updateData.brand = brand.trim();
+    if (size) {
+      updateData.size = size;
+      // Reset size-specific fields
+      updateData.babySize = null;
+      updateData.childSize = null;
+      updateData.adultSize = null;
+      
+      // Set appropriate size field
+      if (size === 'BABY' && babySize) updateData.babySize = babySize;
+      if (size === 'CHILD' && childSize) updateData.childSize = childSize;
+      if (size === 'ADULT' && adultSize) updateData.adultSize = adultSize;
     }
+    if (perishable !== undefined) updateData.perishable = perishable === 'true';
+    if (published !== undefined) updateData.published = published === 'true';
+    if (images) updateData.images = images;
+
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'No valid fields provided for update' 
+      });
+    }
+
+    updateData.updatedDate = new Date();
 
     const updatedArticle = await prisma.article.update({
       where: { id: articleId },
-      data: dataToUpdate,
+      data: updateData,
+      include: {
+        offers: true
+      }
     });
 
-    // res.json(updatedArticle);
-    res.json(serializeBigInt(updatedArticle));
+    res.json({
+      success: true,
+      message: 'Article updated successfully',
+      data: serializeBigInt(updatedArticle)
+    });
+
   } catch (error) {
-    console.error(error);
+    console.error('Error updating article:', error);
+    
     if (error.code === 'P2025') {
-      // Prisma error when record not found for update
-      return res.status(404).json({ message: 'Article not found' });
+      return res.status(404).json({ 
+        success: false,
+        message: 'Article not found' 
+      });
     }
-    res.status(500).json({ message: 'Error updating article', error });
+    
+    res.status(500).json({ 
+      success: false,
+      message: 'Error updating article',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 };
 
 const deleteArticleById = async (req, res) => {
   try {
-    const articleId = parseInt(req.params.id);
-    if (isNaN(articleId)) {
-      return res.status(400).json({ message: 'Invalid article ID' });
+    const { id } = req.params;
+    const owner = req.headers['x-user-username'];
+
+    if (!owner) {
+      return res.status(401).json({ 
+        success: false,
+        message: 'Authentication required' 
+      });
+    }
+
+    if (!id || isNaN(parseInt(id))) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Invalid article ID format' 
+      });
+    }
+
+    const articleId = BigInt(id);
+
+    // Check ownership before deletion
+    const article = await prisma.article.findUnique({
+      where: { id: articleId }
+    });
+
+    if (!article) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'Article not found' 
+      });
+    }
+
+    if (article.owner !== owner) {
+      return res.status(403).json({ 
+        success: false,
+        message: 'You are not authorized to delete this article' 
+      });
     }
 
     await prisma.article.delete({
       where: { id: articleId }
     });
 
-    res.json({ message: 'Article deleted successfully' });
+    res.json({ 
+      success: true,
+      message: 'Article deleted successfully' 
+    });
+
   } catch (error) {
-    console.error(error);
+    console.error('Error deleting article:', error);
+    
     if (error.code === 'P2025') {
-      // Prisma error when record not found for delete
-      return res.status(404).json({ message: 'Article not found' });
+      return res.status(404).json({ 
+        success: false,
+        message: 'Article not found' 
+      });
     }
-    res.status(500).json({ message: 'Error deleting article', error });
+    
+    res.status(500).json({ 
+      success: false,
+      message: 'Error deleting article',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 };
 
 const togglePublishArticle = async (req, res) => {
   try {
-    const articleId = BigInt(req.params.id);
-    console.log('Parsed article ID:', articleId);
-
+    const { id } = req.params;
     const { published } = req.body;
-    console.log('Published value:', published);
+    const owner = req.headers['x-user-username'];
+
+    if (!owner) {
+      return res.status(401).json({ 
+        success: false,
+        message: 'Authentication required' 
+      });
+    }
+
+    if (!id || isNaN(parseInt(id))) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Invalid article ID format' 
+      });
+    }
 
     if (published === undefined) {
-      return res.status(400).json({ message: 'Missing "published" field in request body' });
+      return res.status(400).json({ 
+        success: false,
+        message: 'Missing "published" field in request body' 
+      });
+    }
+
+    const articleId = BigInt(id);
+
+    // Check ownership
+    const article = await prisma.article.findUnique({
+      where: { id: articleId }
+    });
+
+    if (!article) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'Article not found' 
+      });
+    }
+
+    if (article.owner !== owner) {
+      return res.status(403).json({ 
+        success: false,
+        message: 'You are not authorized to modify this article' 
+      });
     }
 
     const isPublished = String(published).toLowerCase() === 'true';
-    console.log('Final publish value:', isPublished);
 
     const updatedArticle = await prisma.article.update({
       where: { id: articleId },
-      data: { published: isPublished },
+      data: { 
+        published: isPublished,
+        updatedDate: new Date()
+      },
+      include: {
+        offers: true
+      }
     });
 
-    console.log('Article updated:', updatedArticle);
-    res.json(serializeBigInt(updatedArticle));
+    res.json({
+      success: true,
+      message: `Article ${isPublished ? 'published' : 'unpublished'} successfully`,
+      data: serializeBigInt(updatedArticle)
+    });
+
   } catch (error) {
     console.error('Error in togglePublishArticle:', error);
 
     if (error.code === 'P2025') {
-      return res.status(404).json({ message: 'Article not found' });
+      return res.status(404).json({ 
+        success: false,
+        message: 'Article not found' 
+      });
     }
 
-    res.status(500).json({ message: 'Failed to update publish status', error });
+    res.status(500).json({ 
+      success: false,
+      message: 'Failed to update publish status',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 };
 
-
-
 const getUserArticles = async (req, res) => {
   try {
-    const username = req.headers['x-user-username']; // secure source
+    const username = req.headers['x-user-username'];
+    const { page = 1, limit = 10, status = 'all' } = req.query;
 
     if (!username) {
-      return res.status(400).json({ message: 'Username not found in request.' });
+      return res.status(401).json({ 
+        success: false,
+        message: 'Authentication required' 
+      });
     }
 
-    const articles = await prisma.article.findMany({
-      where: {
-        owner: username
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const where = { owner: username };
+
+    if (status === 'published') where.published = true;
+    if (status === 'draft') where.published = false;
+
+    const [articles, total] = await Promise.all([
+      prisma.article.findMany({
+        where,
+        include: {
+          offers: {
+            orderBy: {
+              createdDate: 'desc'
+            }
+          }
+        },
+        orderBy: {
+          creationDate: 'desc'
+        },
+        skip,
+        take: parseInt(limit)
+      }),
+      prisma.article.count({ where })
+    ]);
+
+    res.json({
+      success: true,
+      data: serializeBigInt(articles),
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        pages: Math.ceil(total / parseInt(limit))
       }
     });
 
-    res.status(200).json(serializeBigInt(articles));
-
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Error retrieving user articles', error });
+    console.error('Error retrieving user articles:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Error retrieving user articles',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 };
 
 const getAllArticlesSortedByLatest = async (req, res) => {
   try {
-    const articles = await prisma.article.findMany({
-      orderBy: {
-        creationDate: 'desc', // Most recent first
+    const { page = 1, limit = 20, category, gender, state, minPrice, maxPrice } = req.query;
+    
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const where = { published: true };
+
+    // Add filters
+    if (category) where.category = category;
+    if (gender) where.gender = gender;
+    if (state) where.state = state;
+    if (minPrice) where.price = { ...where.price, gte: parseFloat(minPrice) };
+    if (maxPrice) where.price = { ...where.price, lte: parseFloat(maxPrice) };
+
+    const [articles, total] = await Promise.all([
+      prisma.article.findMany({
+        where,
+        include: {
+          offers: {
+            select: {
+              id: true,
+              price: true,
+              status: true,
+              username: true
+            }
+          }
+        },
+        orderBy: {
+          creationDate: 'desc'
+        },
+        skip,
+        take: parseInt(limit)
+      }),
+      prisma.article.count({ where })
+    ]);
+
+    res.json({
+      success: true,
+      data: serializeBigInt(articles),
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        pages: Math.ceil(total / parseInt(limit))
       }
     });
 
-    res.status(200).json(serializeBigInt(articles));
   } catch (error) {
     console.error('Error fetching articles:', error);
-    res.status(500).json({ message: 'Failed to retrieve articles', error });
+    res.status(500).json({ 
+      success: false,
+      message: 'Failed to retrieve articles',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 };
 
 const getArticlesByUsername = async (req, res) => {
-  const { username } = req.params;
-
   try {
-    const articles = await prisma.article.findMany({
-      where: {
-        owner: username,
-      },
-      orderBy: {
-        creationDate: 'desc', // Optional: show newest first
+    const { username } = req.params;
+    const { page = 1, limit = 10 } = req.query;
+
+    if (!username) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Username is required' 
+      });
+    }
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const [articles, total] = await Promise.all([
+      prisma.article.findMany({
+        where: {
+          owner: username,
+          published: true // Only show published articles
+        },
+        include: {
+          offers: {
+            select: {
+              id: true,
+              price: true,
+              status: true
+            }
+          }
+        },
+        orderBy: {
+          creationDate: 'desc'
+        },
+        skip,
+        take: parseInt(limit)
+      }),
+      prisma.article.count({
+        where: {
+          owner: username,
+          published: true
+        }
+      })
+    ]);
+
+    res.json({
+      success: true,
+      data: serializeBigInt(articles),
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        pages: Math.ceil(total / parseInt(limit))
       }
     });
 
-    res.status(200).json(serializeBigInt(articles));
   } catch (error) {
     console.error('Error fetching articles by username:', error);
-    res.status(500).json({ message: 'Failed to retrieve user articles', error });
+    res.status(500).json({ 
+      success: false,
+      message: 'Failed to retrieve user articles',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 };
 
+// Legacy offer function - deprecated, use offer controller instead
 const makeOrUpdateOffer = async (req, res) => {
-  const { id } = req.params;
-  const { amount } = req.body;
-  const username = req.user?.username; // comes from token via middleware
-
-  if (!username) {
-    return res.status(401).json({ message: 'Unauthorized: No username in token' });
-  }
-
-  try {
-    // Get the article
-    const article = await prisma.article.findUnique({
-      where: { id: BigInt(id) },
-    });
-
-    if (!article) {
-      return res.status(404).json({ message: 'Article not found' });
-    }
-
-    // Parse current offers or initialize
-    let offers = article.offers || {};
-    if (typeof offers === 'string') {
-      offers = JSON.parse(offers);
-    }
-
-    // Add or update the user's offer
-    offers[username] = parseFloat(amount);
-
-    // Save back the updated offers
-    const updatedArticle = await prisma.article.update({
-      where: { id: BigInt(id) },
-      data: {
-        offers,
-      },
-    });
-
-    res.status(200).json({
-      message: 'Offer submitted successfully',
-      offers: updatedArticle.offers,
-    });
-
-  } catch (error) {
-    console.error('Offer error:', error);
-    res.status(500).json({ message: 'Failed to submit offer', error });
-  }
+  res.status(410).json({
+    success: false,
+    message: 'This endpoint is deprecated. Please use /offer/create instead.'
+  });
 };
 
-module.exports = { createArticle, getArticleById, updateArticleById, deleteArticleById, togglePublishArticle, getUserArticles, getAllArticlesSortedByLatest, getArticlesByUsername, makeOrUpdateOffer };
-
-
+module.exports = {
+  createArticle,
+  getArticleById,
+  updateArticleById,
+  deleteArticleById,
+  togglePublishArticle,
+  getUserArticles,
+  getAllArticlesSortedByLatest,
+  getArticlesByUsername,
+  makeOrUpdateOffer
+};

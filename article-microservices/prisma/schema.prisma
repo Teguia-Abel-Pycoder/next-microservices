@@ -1,3 +1,4 @@
+// schema.prisma
 generator client {
   provider = "prisma-client-js"
 }
@@ -9,26 +10,58 @@ datasource db {
 
 model Article {
   id           BigInt       @id @default(autoincrement())
-  name         String
+  name         String       @db.VarChar(255)
   gender       Gender
-  description  String
+  description  String       @db.Text
   price        Float
   category     Category
   state        State
-  color        String
-  brand        String
+  color        String       @db.VarChar(100)
+  brand        String       @db.VarChar(100)
   size         ArticleSize
   babySize     BabySize?
   childSize    ChildSize?
   adultSize    AdultSize?
-  owner        String
-  boughtBy     String?
-  offers         Json?
-  creationDate DateTime   @default(now())
-  images       String
-  mainImage    String
-  perishable   Boolean
-  published    Boolean
+  owner        String       @db.VarChar(100)
+  boughtBy     String?      @db.VarChar(100)
+  creationDate DateTime     @default(now())
+  updatedDate  DateTime     @updatedAt
+  images       String?      @db.Text // Made optional and increased size
+  mainImage    String?      @db.Text // Made optional
+  perishable   Boolean      @default(false)
+  published    Boolean      @default(false)
+  
+  // Relations
+  offers       Offer[]
+  
+  @@index([owner])
+  @@index([category])
+  @@index([published])
+  @@index([creationDate])
+}
+
+model Offer {
+  id              BigInt   @id @default(autoincrement())
+  articleId       BigInt
+  articleName     String   @db.VarChar(255)
+  articleCategory String   @db.VarChar(100)
+  articleSize     String   @db.VarChar(50)
+  price           Float
+  seller          String   @db.VarChar(100)
+  username        String   @db.VarChar(100) // buyer username
+  status          Status   @default(PENDING)
+  mainImage       String?  @db.Text
+  createdDate     DateTime @default(now())
+  updatedDate     DateTime @updatedAt
+  
+  // Relations
+  article         Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  
+  @@index([seller])
+  @@index([username])
+  @@index([status])
+  @@index([articleId])
+  @@unique([articleId, username]) // Prevent duplicate offers from same user
 }
 
 enum Gender {
@@ -40,20 +73,33 @@ enum Gender {
 enum State {
   NEW
   USED
+  GOOD
+  FAIR
+}
+
+enum Status {
+  PENDING
+  DENIED
+  ACCEPTED
+  DONE
+  CANCELLED
 }
 
 enum Category {
-  Pants
-  Shirts
-  Pullovers
-  Jackets
-  TShirts
-  Blouses
-  Polo
-  CropTops
-  HatsCaps
-  Socks
-  Accessories
+  PANTS
+  SHIRTS
+  PULLOVERS
+  JACKETS
+  TSHIRTS
+  BLOUSES
+  POLO
+  CROP_TOPS
+  HATS_CAPS
+  SOCKS
+  ACCESSORIES
+  SHOES
+  UNDERWEAR
+  SWIMWEAR
 }
 
 enum ArticleSize {
@@ -63,20 +109,20 @@ enum ArticleSize {
 }
 
 enum BabySize {
-  ThreeMonths
-  ThreeToSixMonths
-  SixToNineMonths
-  NineToTwelveMonths
-  TwelveToEighteenMonths
-  EighteenToTwentyFourMonths
+  THREE_MONTHS
+  THREE_TO_SIX_MONTHS
+  SIX_TO_NINE_MONTHS
+  NINE_TO_TWELVE_MONTHS
+  TWELVE_TO_EIGHTEEN_MONTHS
+  EIGHTEEN_TO_TWENTY_FOUR_MONTHS
 }
 
 enum ChildSize {
-  TwoToFourYears
-  FourToSixYears
-  SixToEightYears
-  EightToTenYears
-  TenToTwelveYears
+  TWO_TO_FOUR_YEARS
+  FOUR_TO_SIX_YEARS
+  SIX_TO_EIGHT_YEARS
+  EIGHT_TO_TEN_YEARS
+  TEN_TO_TWELVE_YEARS
 }
 
 enum AdultSize {
@@ -86,7 +132,7 @@ enum AdultSize {
   L
   XL
   XXL
-  ThreeXL
-  FourXL
-  FiveXL
+  THREE_XL
+  FOUR_XL
+  FIVE_XL
 }
