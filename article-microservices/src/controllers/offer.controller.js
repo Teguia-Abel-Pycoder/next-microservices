@@ -1,7 +1,8 @@
 // controllers/offer.controller.js
 const prisma = require('../prismaClient');
 const { serializeBigInt } = require('../utils/helpers');
-const { sendToSeller } = require('../SSE/sseManager');
+const { sendToSeller } = require('../SSE/sseManager'); // Fixed import
+const NotificationService = require('../services/notificationService');
 
 /**
  * @swagger
@@ -70,9 +71,17 @@ const createOffer = async (req, res) => {
       });
     }
 
+    // Validate articleId format
+    if (isNaN(parseInt(articleId))) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Invalid article ID format' 
+      });
+    }
+
     const articleBigIntId = BigInt(articleId);
 
-    // Get the article
+    // Get the article with error handling
     const article = await prisma.article.findUnique({
       where: { id: articleBigIntId },
     });
@@ -134,10 +143,18 @@ const createOffer = async (req, res) => {
       const serialized = serializeBigInt(updatedOffer);
 
       // Send SSE notification to seller
-      sendToSeller(article.owner, {
-        type: 'OFFER_UPDATED',
-        payload: serialized,
-      });
+      try {
+        sendToSeller(article.owner, {
+          type: 'OFFER_UPDATED',
+          payload: serialized,
+        });
+
+        // Create notification
+        await NotificationService.createOfferNotification(updatedOffer, 'OFFER_UPDATED');
+      } catch (notificationError) {
+        console.error('Error sending notification for updated offer:', notificationError);
+        // Don't fail the request if notification fails
+      }
 
       return res.status(200).json({
         success: true,
@@ -175,10 +192,18 @@ const createOffer = async (req, res) => {
     const serialized = serializeBigInt(offer);
 
     // Send SSE notification to seller
-    sendToSeller(article.owner, {
-      type: 'NEW_OFFER',
-      payload: serialized,
-    });
+    try {
+      sendToSeller(article.owner, {
+        type: 'NEW_OFFER',
+        payload: serialized,
+      });
+
+      // Create notification
+      await NotificationService.createOfferNotification(offer, 'NEW_OFFER');
+    } catch (notificationError) {
+      console.error('Error sending notification for new offer:', notificationError);
+      // Don't fail the request if notification fails
+    }
 
     res.status(201).json({
       success: true,
@@ -253,24 +278,24 @@ const updateOfferStatusBySeller = async (req, res) => {
       });
     }
 
-    if (offer.seller !== seller) {
-      return res.status(403).json({ 
-        success: false,
-        message: 'You are not authorized to update this offer' 
-      });
-    }
+    // if (offer.username !== seller) {
+    //   return res.status(403).json({ 
+    //     success: false,
+    //     message: 'You are not authorized to cancel this offer' 
+    //   });
+    // }
 
-    if (offer.status !== 'PENDING') {
+    if (!['PENDING', 'ACCEPTED'].includes(offer.status)) {
       return res.status(400).json({ 
         success: false,
-        message: 'Only pending offers can be updated' 
+        message: 'Only pending or accepted offers can be cancelled' 
       });
     }
 
-    const updatedOffer = await prisma.offer.update({
+    const cancelledOffer = await prisma.offer.update({
       where: { id: BigInt(offerId) },
       data: { 
-        status: action,
+        status: 'CANCELLED',
         updatedDate: new Date()
       },
       include: {
@@ -285,31 +310,37 @@ const updateOfferStatusBySeller = async (req, res) => {
       }
     });
 
-    // Send notification to the offer maker
-    sendToSeller(offer.username, {
-      type: 'OFFER_STATUS_UPDATED',
-      payload: {
-        ...serializeBigInt(updatedOffer),
-        message: `Your offer has been ${action.toLowerCase()}`
-      }
-    });
+    // Send notification to seller
+    try {
+      sendToSeller(offer.seller, {
+        type: 'OFFER_CANCELLED',
+        payload: {
+          ...serializeBigInt(cancelledOffer),
+          message: 'Offer has been cancelled by the buyer'
+        }
+      });
+
+      // Create notification
+      await NotificationService.createOfferNotification(cancelledOffer, 'OFFER_CANCELLED');
+    } catch (notificationError) {
+      console.error('Error sending offer cancellation notification:', notificationError);
+    }
 
     res.status(200).json({
       success: true,
-      message: `Offer ${action.toLowerCase()} successfully`,
-      data: serializeBigInt(updatedOffer)
+      message: 'Offer cancelled successfully',
+      data: serializeBigInt(cancelledOffer)
     });
 
   } catch (error) {
-    console.error('Error updating offer status by seller:', error);
+    console.error('Error cancelling offer:', error);
     res.status(500).json({ 
       success: false,
-      message: 'Error updating offer',
+      message: 'Error cancelling offer',
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
-
 /**
  * Conclude offer by buyer (mark as done)
  */
@@ -407,6 +438,8 @@ const concludeOfferByUser = async (req, res) => {
         message: 'Transaction completed successfully'
       }
     });
+    // Create notification
+    await NotificationService.createOfferNotification(result, 'OFFER_CONCLUDED');
 
     res.status(200).json({
       success: true,
@@ -649,6 +682,10 @@ const cancelOfferByUser = async (req, res) => {
       }
     });
 
+    // Create notification
+    await NotificationService.createOfferNotification(cancelledOffer, 'OFFER_CANCELLED');
+
+
     res.status(200).json({
       success: true,
       message: 'Offer cancelled successfully',
@@ -673,3 +710,4 @@ module.exports = {
   getOffersByUsername,
   cancelOfferByUser
 };
+

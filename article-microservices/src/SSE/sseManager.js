@@ -1,5 +1,5 @@
-// SSE/sseManager.js
-const emitters = new Map(); // Use Map to store arrays of connections
+// SSE/sseManager.js - Fixed version
+const emitters = new Map();
 let heartbeatInterval = null;
 
 /**
@@ -140,15 +140,34 @@ function getTotalConnections() {
 /**
  * Send heartbeat to all active connections
  */
-function sendHeartbeat() {
+async function sendHeartbeat() {
   const now = new Date();
   
-  emitters.forEach((connections, seller) => {
+  // Import NotificationService here to avoid circular dependencies
+  let NotificationService;
+  try {
+    NotificationService = require('../services/notificationService');
+  } catch (error) {
+    console.error('Failed to import NotificationService:', error);
+  }
+  
+  for (const [seller, connections] of emitters.entries()) {
     if (connections.length > 0) {
+      // Get unread notification count if service is available
+      let unreadCount = 0;
+      if (NotificationService) {
+        try {
+          unreadCount = await NotificationService.getUnreadCount(seller);
+        } catch (error) {
+          console.error(`Error getting unread count for ${seller}:`, error);
+        }
+      }
+      
       const heartbeatData = {
         type: 'HEARTBEAT',
         message: 'Connection alive',
-        timestamp: now.toISOString()
+        timestamp: now.toISOString(),
+        unreadNotifications: unreadCount
       };
       
       // Send heartbeat and clean up dead connections
@@ -175,11 +194,6 @@ function sendHeartbeat() {
         console.log(`🧹 Cleaned up dead connections for seller: ${seller}`);
       }
     }
-  });
-  
-  // Stop heartbeat if no connections remain
-  if (getTotalConnections() === 0) {
-    stopHeartbeat();
   }
 }
 
@@ -193,7 +207,9 @@ function startHeartbeat() {
   
   console.log('💓 Starting SSE heartbeat');
   heartbeatInterval = setInterval(() => {
-    sendHeartbeat();
+    sendHeartbeat().catch(error => {
+      console.error('Heartbeat error:', error);
+    });
   }, 30000); // Every 30 seconds
 }
 
@@ -308,5 +324,6 @@ module.exports = {
   stopHeartbeat,
   broadcastToAll,
   cleanupStaleConnections,
-  getConnectionStats
+  getConnectionStats,
+  emitters
 };

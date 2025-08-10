@@ -1,4 +1,4 @@
-// schema.prisma
+// schema.prisma - Updated with Transaction model
 generator client {
   provider = "prisma-client-js"
 }
@@ -33,6 +33,7 @@ model Article {
   
   // Relations
   offers       Offer[]
+  transactions Transaction[]
   
   @@index([owner])
   @@index([category])
@@ -55,13 +56,67 @@ model Offer {
   updatedDate     DateTime @updatedAt
   
   // Relations
-  article         Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  article         Article       @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  transactions    Transaction[]
   
   @@index([seller])
   @@index([username])
   @@index([status])
   @@index([articleId])
   @@unique([articleId, username]) // Prevent duplicate offers from same user
+}
+
+model Transaction {
+  id                        BigInt            @id @default(autoincrement())
+  offerId                   BigInt
+  articleId                 BigInt
+  buyerUsername             String            @db.VarChar(100)
+  sellerUsername            String            @db.VarChar(100)
+  amount                    Float
+  status                    TransactionStatus @default(PAYMENT_PENDING)
+  
+  // Payment information
+  paymentReference          String?           @db.VarChar(255)
+  paymentConfirmedAt        DateTime?
+  paymentReleasedAt         DateTime?
+  paymentReleaseReference   String?           @db.VarChar(255)
+  
+  // Shipping information
+  shippingAddress           String            @db.Text // JSON string
+  trackingNumber            String?           @db.VarChar(255)
+  carrier                   String?           @db.VarChar(100)
+  estimatedDelivery         DateTime?
+  shippedAt                 DateTime?
+  deliveryConfirmedAt       DateTime?
+  
+  // Dispute information
+  disputeReason             String?           @db.VarChar(100)
+  disputeDescription        String?           @db.Text
+  disputeOpenedBy           String?           @db.VarChar(100)
+  disputeOpenedAt           DateTime?
+  disputeResolvedAt         DateTime?
+  disputeResolution         String?           @db.Text
+  
+  // Feedback
+  buyerRating              Int?              // 1-5 stars
+  buyerReview              String?           @db.VarChar(500)
+  sellerRating             Int?              // 1-5 stars
+  sellerReview             String?           @db.VarChar(500)
+  
+  // Timestamps
+  createdDate              DateTime          @default(now())
+  updatedDate              DateTime          @updatedAt
+  
+  // Relations
+  offer                    Offer             @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  article                  Article           @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  
+  @@index([buyerUsername])
+  @@index([sellerUsername])
+  @@index([status])
+  @@index([createdDate])
+  @@index([offerId])
+  @@index([articleId])
 }
 
 enum Gender {
@@ -83,6 +138,16 @@ enum Status {
   ACCEPTED
   DONE
   CANCELLED
+}
+
+enum TransactionStatus {
+  PAYMENT_PENDING
+  PAYMENT_CONFIRMED
+  SHIPPED
+  COMPLETED
+  DISPUTED
+  CANCELLED
+  REFUNDED
 }
 
 enum Category {
@@ -135,4 +200,38 @@ enum AdultSize {
   THREE_XL
   FOUR_XL
   FIVE_XL
+}
+
+model Notification {
+  id            BigInt         @id @default(autoincrement())
+  userId        String         @db.VarChar(100)
+  type          NotificationType
+  title         String         @db.VarChar(255)
+  message       String         @db.Text
+  data          Json?          // Store additional notification data
+  read          Boolean        @default(false)
+  createdDate   DateTime       @default(now())
+  updatedDate   DateTime       @updatedAt
+  
+  @@index([userId])
+  @@index([read])
+  @@index([createdDate])
+  @@index([type])
+}
+
+enum NotificationType {
+  NEW_OFFER
+  OFFER_UPDATED
+  OFFER_ACCEPTED
+  OFFER_DENIED
+  OFFER_CANCELLED
+  OFFER_CONCLUDED
+  ARTICLE_SOLD
+  SYSTEM_MESSAGE
+  PAYMENT_CONFIRMED
+  ITEM_SHIPPED
+  PAYMENT_RELEASED
+  TRANSACTION_COMPLETED
+  TRANSACTION_DISPUTED
+  DISPUTE_OPENED
 }

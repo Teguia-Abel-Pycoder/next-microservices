@@ -1,4 +1,4 @@
-// found in app.js
+// app.js - Updated with transaction routes
 const express = require('express');
 const cors = require('cors');
 // const helmet = require('helmet');
@@ -6,10 +6,16 @@ const compression = require('compression');
 const path = require('path');
 const swaggerUi = require('swagger-ui-express');
 const swaggerDocument = require('./swagger.json');
+const cron = require('node-cron');
+
+// Import services
+const NotificationService = require('./services/notificationService');
 
 // Import routes
 const articleRoutes = require('./routes/article.routes');
 const offerRoutes = require('./routes/offer.routes');
+const notificationRoutes = require('./routes/notification.routes');
+const transactionRoutes = require('./routes/transaction.routes'); // New transaction routes
 
 // Import middleware
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
@@ -33,6 +39,27 @@ const app = express();
 // Compression middleware
 app.use(compression());
 
+// Notification cleanup job (run daily at 2 AM)
+cron.schedule('0 2 * * *', async () => {
+  console.log('🧹 Running notification cleanup...');
+  try {
+    await NotificationService.cleanupOldNotifications();
+  } catch (error) {
+    console.error('Error in notification cleanup:', error);
+  }
+});
+
+// Transaction cleanup job (run daily at 3 AM)
+cron.schedule('0 3 * * *', async () => {
+  console.log('🧹 Running transaction cleanup...');
+  try {
+    const { cleanupExpiredTransactions } = require('./services/transactionService');
+    await cleanupExpiredTransactions();
+  } catch (error) {
+    console.error('Error in transaction cleanup:', error);
+  }
+});
+
 // CORS configuration optimized for SSE
 app.use(cors({
   origin: function (origin, callback) {
@@ -55,7 +82,7 @@ app.use(cors({
     // ❌ Otherwise, block the request
     return callback(new Error('Not allowed by CORS'));
   },
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: [
     'Content-Type',
     'Authorization',
@@ -66,7 +93,6 @@ app.use(cors({
   ],
   credentials: false
 }));
-
 
 // Request parsing middleware
 app.use(express.json({ limit: '10mb' }));
@@ -119,20 +145,32 @@ app.use('/offer/stream', (req, res, next) => {
 // API Routes
 app.use('/api/articles', articleRoutes);
 app.use('/offer', offerRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/transactions', transactionRoutes); // New transaction routes
 
 // API info endpoint
 app.get('/api', (req, res) => {
   res.json({
     name: 'Articles & Offers API',
     version: process.env.npm_package_version || '1.0.0',
-    description: 'API for managing articles and offers with real-time notifications',
+    description: 'API for managing articles, offers and transactions with real-time notifications',
     documentation: '/api-docs',
     endpoints: {
       articles: '/api/articles',
       offers: '/offer',
+      transactions: '/api/transactions',
+      notifications: '/api/notifications',
       health: '/health',
       sse: '/offer/stream/:seller'
-    }
+    },
+    features: [
+      'Article management',
+      'Offer system',
+      'Secure transaction processing',
+      'Real-time notifications via SSE',
+      'Dispute resolution',
+      'Payment escrow simulation'
+    ]
   });
 });
 
