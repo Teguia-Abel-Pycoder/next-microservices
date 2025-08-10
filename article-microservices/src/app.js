@@ -205,5 +205,6 @@ process.on('uncaughtException', (error) => {
   console.error('❌ Uncaught Exception:', error);
   process.exit(1);
 });
-
+const PORT = process.env.PORT || 4000;
+app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
 module.exports = app;
