@@ -39,60 +39,13 @@ const app = express();
 // Compression middleware
 app.use(compression());
 
-// Notification cleanup job (run daily at 2 AM)
-cron.schedule('0 2 * * *', async () => {
-  console.log('🧹 Running notification cleanup...');
-  try {
-    await NotificationService.cleanupOldNotifications();
-  } catch (error) {
-    console.error('Error in notification cleanup:', error);
-  }
-});
 
-// Transaction cleanup job (run daily at 3 AM)
-cron.schedule('0 3 * * *', async () => {
-  console.log('🧹 Running transaction cleanup...');
-  try {
-    const { cleanupExpiredTransactions } = require('./services/transactionService');
-    await cleanupExpiredTransactions();
-  } catch (error) {
-    console.error('Error in transaction cleanup:', error);
-  }
-});
 
 // CORS configuration optimized for SSE
-app.use(cors({
-  origin: function (origin, callback) {
-    const allowedOrigins = [
-      'http://localhost:3000',
-      'http://127.0.0.1:3000',
-      'https://your-frontend-domain.com'
-    ];
+app.use(cors())
+  
 
-    // ✅ Always allow requests in development
-    if (process.env.NODE_ENV !== 'production') {
-      return callback(null, true);
-    }
 
-    // ✅ In production, allow if origin is in the whitelist
-    if (!origin || allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-
-    // ❌ Otherwise, block the request
-    return callback(new Error('Not allowed by CORS'));
-  },
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: [
-    'Content-Type',
-    'Authorization',
-    'Accept',
-    'Cache-Control',
-    'X-Requested-With',
-    'X-User-Username'
-  ],
-  credentials: false
-}));
 
 // Request parsing middleware
 app.use(express.json({ limit: '10mb' }));
@@ -180,31 +133,7 @@ app.use(notFoundHandler);
 // Global error handler
 app.use(errorHandler);
 
-// Graceful shutdown handling
-process.on('SIGTERM', () => {
-  console.log('🛑 SIGTERM received, shutting down gracefully');
-  process.exit(0);
-});
 
-process.on('SIGINT', () => {
-  console.log('🛑 SIGINT received, shutting down gracefully');
-  process.exit(0);
-});
-
-// Unhandled promise rejection handler
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
-  // Don't exit in production, just log the error
-  if (process.env.NODE_ENV !== 'production') {
-    process.exit(1);
-  }
-});
-
-// Uncaught exception handler
-process.on('uncaughtException', (error) => {
-  console.error('❌ Uncaught Exception:', error);
-  process.exit(1);
-});
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
 module.exports = app;
